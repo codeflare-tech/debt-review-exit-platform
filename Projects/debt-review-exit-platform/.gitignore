@@ -1,0 +1,34 @@
+# See https://github.com/vercel/next.js/blob/canary/docs/app/api-security.md
+next.config.js
+.next
+.next-env.d.ts
+lib/prisma.client.js
+lib/prisma.client.js.map
+.env
+.env.local
+.env.production
+.env*.local
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+# OS / editor
+.DS_Store
+.idea/
+.idea
+*.swp
+*.swo
+*~
+# OSX
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+# Log
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+# Test
+coverage
+# Prisma
+public/prisma/migrations  # never serve migrations

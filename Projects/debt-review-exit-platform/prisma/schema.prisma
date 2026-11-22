@@ -1,0 +1,681 @@
+// ============================================================
+// PRISMA SCHEMA — Debt Review Exit Platform (final)
+// Single PostgreSQL database. All public identifiers are UUIDs.
+// Every relation carries a matching @relation name on both sides.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleSlug {
+  client
+  case_manager
+  document_reviewer
+  finance_officer
+  customer_support
+  administrator
+  super_admin
+}
+
+enum PermissionSlug {
+  manage_own_profile
+  manage_all_profiles
+  manage_own_inbox
+  manage_all_messages
+  manage_all_notes
+  manage_all_tickets
+  manage_all_applications
+  assign_case_managers
+  update_any_status
+  review_documents
+  approve_swift_document_action
+  configure_packages
+  manage_finance
+  view_reports
+  manage_staff
+  configure_settings
+  manage_chat
+  manage_support
+  mark_application_complete
+}
+
+model Role {
+  id         String   @id
+  slug       RoleSlug @unique
+  name       String
+  description String?
+  isActive   Boolean  @default(true)
+  permissions RolePermission[] @relation("RolePermissions")
+  userRoles   UserRole[] @relation("UserRoleRole")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+}
+
+model Permission {
+  id               String   @id
+  slug             PermissionSlug @unique
+  name             String
+  description      String?
+  category         String?
+  rolePermissions  RolePermission[] @relation("PermissionRolePermissions")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+}
+
+model UserRole {
+  id         String   @id
+  userId     String
+  user       User     @relation("UserRoleUser", fields: [userId], references: [id], onDelete: Cascade)
+  roleId     String
+  role       Role     @relation("UserRoleRole", fields: [roleId], references: [id], onDelete: Cascade)
+  grantedAt  DateTime @default(now()) @map("granted_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  @@unique([userId, roleId])
+}
+
+model RolePermission {
+  id              String   @id
+  roleId          String
+  role            Role     @relation("RolePermissions", fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId    String
+  permission      Permission @relation("PermissionRolePermissions", fields: [permissionId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+}
+
+// ----------------------------------------------------------------
+// USERS, PROFILES, STAFF
+// ----------------------------------------------------------------
+model User {
+  id                   String   @id
+  email                String   @unique
+  passwordHash         String?
+  fullName             String?
+  roleId               RoleSlug?
+  isEmailVerified      Boolean  @default(false)
+  isEmailConfirmed     Boolean  @default(false)
+  isPhoneVerified      Boolean  @default(false)
+  isTwoFactorEnabled   Boolean  @default(false)
+  twoFactorSecret      String?
+  twoFactorBackupCodes String?
+  passwordResetToken   String?
+  passwordResetAt      DateTime?
+  lastLoginAt          DateTime?
+  isActive             Boolean  @default(true)
+  isSuspended          Boolean  @default(false)
+  lockedAt             DateTime?
+  failedLoginCount     Int      @default(0)
+  lockoutUntil         DateTime?
+  avatarUrl            String?
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt  @map("updated_at")
+  lastActivityAt       DateTime?
+
+  sessions             Session[] @relation("SessionUser")
+  verificationTokens   VerificationToken[] @relation("VerificationUser")
+  passwordResetTokens  PasswordResetToken[] @relation("PasswordResetUser")
+  userProfile          UserProfile? @relation("UserProfileUser")
+  staffProfile         StaffProfile? @relation("StaffProfileUser")
+  auditLogs            AuditLog[] @relation("AuditUser")
+  consents             ConsentRecord[] @relation("ConsentUser")
+  notifications        NotificationPreference[] @relation("NotificationUser")
+  applications         Application[] @relation("ApplicationUser")
+  messages             Message[] @relation("RecipientMessages")
+  sentMessages         Message[] @relation("SenderMessages")
+  userRoles            UserRole[] @relation("UserRoleUser")
+  documents            Document[] @relation("ClientDocuments")
+  supportTickets       SupportTicket[] @relation("SupportStaff")
+  invoices             Invoice[] @relation("InvoiceUser")
+  payments             Payment[] @relation("PaymentUser")
+  acceptedDisclosures  FeeDisclosure[] @relation("FeeApprovalAccepted")
+  signedDisclosures    FeeDisclosure[] @relation("FeeApprovalSigned")
+
+  @@index([isSuspended])
+  @@index([lockoutUntil])
+  @@index([isEmailVerified])
+}
+
+model UserProfile {
+  id   String   @id
+  userId String   @unique
+  user  User     @relation("UserProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  avatarUrl                   String?
+  dateOfBirth                 DateTime?
+  residentialAddress          String?
+  province                    String?
+  phoneNumber                 String?
+  preferredCommunicationMethod String? @map("preferred_communication_method")
+  identityVerificationStatus String? @map("identity_verification_status")
+  serviceOption                String? @map("service_option")
+  selectedPackageId           String?
+  assignedCaseManagerId       String?
+  internalNotes               String?
+  details                     Json?
+  industry                    String?
+  organisation                String?
+  tradingName                 String?
+  website                     String?
+  companyNumber               String?
+  crnNumber                   String?
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt  @map("updated_at")
+  @@index([userId])
+}
+
+model StaffProfile {
+  id               String   @id
+  userId           String   @unique
+  user             User     @relation("StaffProfileUser", fields: [userId], references: [id], onDelete: Cascade)
+  employeeNumber   String?
+  department       String?
+  jobTitle         String?
+  hireDate         DateTime?
+  isActive         Boolean  @default(true)
+  terminationDate  DateTime?
+  notes            String?
+  managedApplications Application[] @relation("ApplicationCaseManager")
+  caseAssignments  CaseAssignment[] @relation("CaseAssignmentStaff")
+  caseNotes        CaseNote[] @relation("CaseNoteStaff")
+  reviewedDocuments DocumentReview[] @relation("DocumentReviewReviewer")
+  supportTickets   SupportTicket[] @relation("SupportStaff")
+  issuedInvoices   Invoice[] @relation("InvoiceStaff")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt  @map("updated_at")
+  @@index([userId])
+}
+
+// ----------------------------------------------------------------
+// PACKAGES (dynamic config)
+// ----------------------------------------------------------------
+model Package {
+  id          String   @id
+  name        String
+  slug        String   @unique
+  priceCents  Int
+  currency    String   @default("ZAR")
+  description String?
+  longDescription String?
+  targetServiceWeeks Int?
+  isFeatured   Boolean  @default(false)
+  status       String   @default("active")
+  sortOrder    Int      @default(0)
+  changeHistory   String? @map("change_history")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt  @map("updated_at")
+  packageFeatures PackageFeature[] @relation("PackageFeaturePackage")
+  application   Application? @relation("ApplicationPackage")
+  feeDisclosures FeeDisclosure[] @relation("PackageFeeDisclosure")
+  invoices       Invoice[] @relation("InvoicePackage")
+}
+
+model PackageFeature {
+  id         String   @id
+  packageId  String
+  package    Package  @relation("PackageFeaturePackage", fields: [packageId], references: [id], onDelete: Cascade)
+  feature    String
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt  @map("updated_at")
+  @@unique([packageId, feature])
+  @@index([packageId])
+}
+
+// ----------------------------------------------------------------
+// ELIGIBILITY & APPLICATIONS
+// ----------------------------------------------------------------
+model EligibilityAssessment {
+  id        String   @id
+  applicationId String  @unique
+  application Application @relation("EligibilityApplication", fields: [applicationId], references: [id], onDelete: Cascade)
+  fullName  String
+  email     String
+  mobile    String?
+  province  String?
+  isUnderDebtReview       Boolean @default(false)
+  hasCourtOrderFile       Boolean @default(false)
+  hasSettledAllDebts      Boolean @default(false)
+  hasHomeLoan             Boolean @default(false)
+  hasArrears              Boolean @default(false)
+  hasClearanceCertificate Boolean @default(false)
+  knowsDebtCounsellor     Boolean @default(false)
+  hasSupportingDocuments  Boolean @default(false)
+  answeredQuestions       Json?
+  preliminaryResult       String?
+  referenceNumber         String  @unique
+  notes                   String?
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt  @map("updated_at")
+  @@index([referenceNumber])
+}
+
+model Application {
+  id                String   @id
+  referenceNumber   String   @unique
+  userId            String
+  user              User     @relation("ApplicationUser", fields: [userId], references: [id], onDelete: Cascade)
+  packageId         String   @unique
+  package           Package  @relation("ApplicationPackage", fields: [packageId], references: [id], onDelete: SetNull)
+  clientRef         String?
+  statusId          String
+  status            ApplicationStatus? @relation("ApplicationStatus", fields: [statusId], references: [id], onDelete: SetNull)
+  priority          String   @default("standard")
+  caseManagerId     String?
+  caseManager       StaffProfile? @relation("ApplicationCaseManager", fields: [caseManagerId], references: [id])
+  submittedAt       DateTime?
+  nextAction        String?
+  internalNotes     String?
+  statusHistory     ApplicationStatusHistory[] @relation("ApplicationStatusHistoryApp")
+  documents         Document[] @relation("ApplicationDocuments")
+  messages          Message[] @relation("ApplicationMessages")
+  feeDisclosures    FeeDisclosure[] @relation("ApplicationFeeDisclosure")
+  payment           Payment? @relation("ApplicationPayment")
+  invoice           Invoice? @relation("ApplicationInvoice")
+  legalReviews      LegalReview[] @relation("ApplicationLegalReview")
+  auditLogs         AuditLog[] @relation("ApplicationAuditLog")
+  notifications     NotificationPreference[] @relation("NotificationApp")
+  eligibilityAssessments EligibilityAssessment[] @relation("EligibilityApplication")
+  caseAssignments  CaseAssignment[] @relation("CaseAssignmentApplication")
+  caseNotes        CaseNote[] @relation("CaseNoteApplication")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt  @map("updated_at")
+  @@index([userId])
+  @@index([statusId])
+  @@index([caseManagerId])
+  @@index([submittedAt])
+}
+
+model ApplicationStatus {
+  id        String   @id
+  slug      String   @unique
+  label     String
+  description String?
+  isTerminal Boolean  @default(false)
+  sortOrder Int      @default(0)
+  applicationStatusHistories ApplicationStatusHistory[] @relation("ApplicationStatusHistoryStatus")
+  applications Application[] @relation("ApplicationStatus")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt  @map("updated_at")
+}
+
+model ApplicationStatusHistory {
+  id              String   @id
+  applicationId   String
+  application     Application @relation("ApplicationStatusHistoryApp", fields: [applicationId], references: [id], onDelete: Cascade)
+  statusId        String
+  status          ApplicationStatus @relation("ApplicationStatusHistoryStatus", fields: [statusId], references: [id], onDelete: Cascade)
+  previousStatusId String?
+  actorId         String?
+  actorType       String?
+  description     String?
+  evidenceIds     String[] @default([])
+  createdAt       DateTime @default(now()) @map("created_at")
+  @@index([applicationId])
+}
+
+model CaseAssignment {
+  id             String   @id
+  applicationId  String   @unique
+  application    Application @relation("CaseAssignmentApplication", fields: [applicationId], references: [id], onDelete: Cascade)
+  staffId        String
+  staff          StaffProfile @relation("CaseAssignmentStaff", fields: [staffId], references: [id], onDelete: Cascade)
+  assignedAt     DateTime @default(now()) @map("assigned_at")
+  reassignedAt   DateTime?
+  status         String   @default("active")
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt  @map("updated_at")
+  @@index([applicationId])
+  @@index([staffId])
+}
+
+model CaseNote {
+  id              String   @id
+  applicationId   String   @unique
+  application     Application @relation("CaseNoteApplication", fields: [applicationId], references: [id], onDelete: Cascade)
+  staffId         String
+  staff           StaffProfile @relation("CaseNoteStaff", fields: [staffId], references: [id], onDelete: Cascade)
+  clientVisible   Boolean  @default(false)
+  note            String
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt  @map("updated_at")
+  @@index([applicationId])
+  @@index([clientVisible])
+}
+
+// ----------------------------------------------------------------
+// DOCUMENTS
+// ----------------------------------------------------------------
+model Document {
+  id            String   @id
+  applicationId String
+  application   Application @relation("ApplicationDocuments", fields: [applicationId], references: [id], onDelete: Cascade)
+  clientId      String
+  client        User     @relation("ClientDocuments", fields: [clientId], references: [id], onDelete: Cascade)
+  categoryId    String
+  category      DocumentCategory @relation("DocumentCategoryDocuments", fields: [categoryId], references: [id], onDelete: SetNull)
+  fileName      String
+  originalName  String
+  mimeType      String
+  sizeBytes     Int
+  sha256        String? @unique
+  storageKey    String @unique
+  previewUrl    String?
+  reviewState   String   @default("pending_review")
+  reviewNotes   String?
+  reviewerId    String?
+  reviews       DocumentReview[] @relation("DocumentReviewReviewer")
+  attachments   MessageAttachment[] @relation("MessageAttachmentDocument")
+  version       Int     @default(1)
+  uploadedAt    DateTime @default(now()) @map("uploaded_at")
+  reviewedAt    DateTime?
+  retentionPolicy String? @map("retention_policy")
+  retentionUntil DateTime?
+  accessCount   Int     @default(0)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt  @map("updated_at")
+  @@index([applicationId])
+  @@index([clientId])
+  @@index([categoryId])
+  @@index([reviewState])
+  @@index([uploadedAt])
+  @@index([storageKey])
+}
+
+model DocumentCategory {
+  id          String   @id
+  slug        String   @unique
+  name        String
+  description String?
+  requiredFor String[] @default(["application"])
+  maxSizeMB   Int      @default(25)
+  allowedMimeTypes String @default("application/pdf,image/jpeg,image/png,image/gif,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/heic,image/webp")
+  isActive    Boolean  @default(true)
+  documents   Document[] @relation("DocumentCategoryDocuments")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt  @map("updated_at")
+}
+
+model DocumentReview {
+  id           String   @id
+  documentId   String   @unique
+  document     Document @relation("DocumentReviewReviewer", fields: [documentId], references: [id], onDelete: Cascade)
+  reviewerId   String
+  reviewer     StaffProfile @relation("DocumentReviewReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  verdict      String   @default("needs_review")
+  notes        String?
+  reviewedAt   DateTime? @map("reviewed_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt  @map("updated_at")
+  @@index([reviewerId])
+}
+
+// ----------------------------------------------------------------
+// MESSAGES
+// ----------------------------------------------------------------
+model Message {
+  id           String   @id
+  threadId     String? @unique
+  parentId     String?
+  applicationId String?
+  application  Application? @relation("ApplicationMessages", fields: [applicationId], references: [id], onDelete: Cascade)
+  senderId     String
+  sender       User @relation("SenderMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId  String
+  recipient    User @relation("RecipientMessages", fields: [recipientId], references: [id], onDelete: Cascade)
+  body         String
+  isInternal   Boolean  @default(false)
+  readAt       DateTime?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt  @map("updated_at")
+  attachments  MessageAttachment[] @relation("MessageAttachmentMessage")
+  @@index([senderId])
+  @@index([recipientId])
+  @@index([applicationId])
+  @@index([threadId])
+}
+
+model MessageAttachment {
+  id           String   @id
+  messageId    String
+  message      Message  @relation("MessageAttachmentMessage", fields: [messageId], references: [id], onDelete: Cascade)
+  documentId   String
+  document     Document @relation("MessageAttachmentDocument", fields: [documentId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@index([messageId])
+  @@index([documentId])
+}
+
+// ----------------------------------------------------------------
+// NOTIFICATIONS
+// ----------------------------------------------------------------
+model NotificationPreference {
+  id             String   @id
+  userId         String
+  user           User     @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  applicationId  String? @unique
+  application    Application? @relation("NotificationApp", fields: [applicationId], references: [id], onDelete: Cascade)
+  emailEnabled   Boolean  @default(true)
+  smsEnabled     Boolean  @default(true)
+  whatsappEnabled Boolean @default(true)
+  exceptEvents   String[] @default(["account_created"])
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt  @map("updated_at")
+  @@index([userId])
+}
+
+// ----------------------------------------------------------------
+// SUPPORT TICKETS
+// ----------------------------------------------------------------
+model SupportTicket {
+  id              String   @id
+  userId          String
+  user            User     @relation("SupportStaff", fields: [userId], references: [id], onDelete: Cascade)
+  subject         String
+  body            String
+  status          String   @default("open")
+  priority        String   @default("normal")
+  assignedStaffId String?
+  assignedStaff   StaffProfile? @relation("SupportStaff", fields: [assignedStaffId], references: [id])
+  resolvedAt      DateTime?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt  @map("updated_at")
+  @@index([userId])
+  @@index([assignedStaffId])
+  @@index([status])
+}
+
+// ----------------------------------------------------------------
+// INVOICES, PAYMENTS & COMPLIANCE
+// ----------------------------------------------------------------
+model Invoice {
+  id             String   @id
+  applicationId  String? @unique
+  application    Application? @relation("ApplicationInvoice", fields: [applicationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation("InvoiceUser", fields: [userId], references: [id], onDelete: Cascade)
+  packageId      String
+  packageItem    Package? @relation("InvoicePackage", fields: [packageId], references: [id], onDelete: SetNull)
+  amountCents    Int
+  currency       String   @default("ZAR")
+  status         String   @default("draft")
+  paymentStatus  String   @default("unpaid")
+  invoiceNumber  String   @unique
+  issueDate      DateTime @default(now()) @map("issue_date")
+  dueDate        DateTime?
+  issuedById     String
+  issuedBy       StaffProfile @relation("InvoiceStaff", fields: [issuedById], references: [id])
+  paymentId      String? @unique
+  payment        Payment? @relation("PaymentInvoice", fields: [paymentId], references: [id], onDelete: Cascade)
+  breakdown      Json?
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt  @map("updated_at")
+  @@index([userId])
+  @@index([applicationId])
+  @@index([status])
+}
+
+model Payment {
+  id             String   @id
+  applicationId  String? @unique
+  application    Application? @relation("ApplicationPayment", fields: [applicationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User? @relation("PaymentUser", fields: [userId], references: [id], onDelete: Cascade)
+  amountCents    Int
+  currency       String   @default("ZAR")
+  provider       String?
+  providerRef    String?
+  status         String   @default("pending")
+  method         String?
+  billingRef     String?
+  events         PaymentEvent[] @relation("PaymentEvents")
+  payment        Invoice? @relation("PaymentInvoice")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt  @map("updated_at")
+  @@index([status])
+  @@index([applicationId])
+}
+
+model PaymentEvent {
+  id           String   @id
+  paymentId    String
+  payment      Payment  @relation("PaymentEvents", fields: [paymentId], references: [id], onDelete: Cascade)
+  eventType    String
+  amountCents  Int?
+  oldStatus    String?
+  newStatus    String?
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@index([paymentId])
+}
+
+model FeeDisclosure {
+  id              String   @id
+  applicationId   String   @unique
+  application     Application @relation("ApplicationFeeDisclosure", fields: [applicationId], references: [id], onDelete: Cascade)
+  packageId       String   @unique
+  packageItem     Package  @relation("PackageFeeDisclosure", fields: [packageId], references: [id], onDelete: Cascade)
+  totalCents      Int
+  currency        String   @default("ZAR")
+  breakdown       Json
+  clientAcceptedAt DateTime?
+  acceptedById    String?
+  acceptedBy      User? @relation("FeeApprovalAccepted", fields: [acceptedById], references: [id])
+  termsVersion    String?
+  signedAt        DateTime?
+  signedById      String?
+  signedBy        User? @relation("FeeApprovalSigned", fields: [signedById], references: [id])
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt  @map("updated_at")
+  @@index([applicationId])
+}
+
+// ----------------------------------------------------------------
+// CONSENT, LEGAL & AUDIT
+// ----------------------------------------------------------------
+model ConsentRecord {
+  id           String   @id
+  userId       String
+  user         User     @relation("ConsentUser", fields: [userId], references: [id], onDelete: Cascade)
+  purpose      String
+  consentGiven Boolean  @default(true)
+  version      String?
+  givenAt      DateTime @default(now()) @map("given_at")
+  givenBy      String?
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt  @map("updated_at")
+  @@index([userId])
+}
+
+model LegalReview {
+  id             String   @id
+  applicationId  String?
+  application    Application? @relation("ApplicationLegalReview", fields: [applicationId], references: [id], onDelete: Cascade)
+  documentType   String?
+  documentTitle  String?
+  status         String   @default("pending")
+  reviewer       String?
+  reviewedAt     DateTime?
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt  @map("updated_at")
+  @@index([applicationId])
+  @@index([documentType])
+  @@index([status])
+}
+
+model AuditLog {
+  id            String   @id
+  actorId       String?
+  actor         User? @relation("AuditUser", fields: [actorId], references: [id], onDelete: Cascade)
+  action        String
+  targetTable   String?
+  targetId      String?
+  applicationId String?
+  application   Application? @relation("ApplicationAuditLog", fields: [applicationId], references: [id], onDelete: Cascade)
+  ipAddress     String?
+  userAgent     String?
+  metadata      Json?
+  createdAt     DateTime @default(now()) @map("created_at")
+  @@index([actorId])
+  @@index([applicationId])
+  @@index([createdAt])
+}
+
+model WebsiteContent {
+  id        String   @id
+  page      String
+  section   String
+  key       String
+  value     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt  @map("updated_at")
+  @@unique([page, section, key])
+  @@index([page])
+}
+
+// ----------------------------------------------------------------
+// SESSIONS, VERIFICATION & RESET
+// ----------------------------------------------------------------
+model Session {
+  id           String   @id
+  userId       String
+  user         User     @relation("SessionUser", fields: [userId], references: [id], onDelete: Cascade)
+  token        String   @unique
+  expiresAt    DateTime
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt  @map("updated_at")
+  lastActivityAt DateTime?
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model VerificationToken {
+  id           String   @id
+  userId       String
+  user         User     @relation("VerificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String   @unique
+  expiresAt    DateTime
+  used         Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id           String   @id
+  userId       String
+  user         User     @relation("PasswordResetUser", fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String   @unique
+  expiresAt    DateTime
+  used         Boolean  @default(false)
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@index([expiresAt])
+}
