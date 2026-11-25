@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: debt-review-exit-platform
+    runtime: docker
+    plan: starter
+    env: docker
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+        value: ${DATABASE_URL}
+      - key: SESSION_SECRET
+        sync: false
+        generate: true
+      - key: CSRF_SECRET
+        sync: false
+        generate: true
+      - key: APP_ORIGIN
+        sync: false
+        value: https://debt-review-exit-platform.onrender.com
+      - key: PAYMENT_WORKFLOW_APPROVED
+        sync: false
+        value: "false"
+      - key: TWO_FACTOR_ENABLED
+        sync: false
+        value: "false"
+      - key: ATOMICMAIL_EMAIL
+        sync: false
+        value: hermes-local@atomicmail.ai
+      - key: ATOMICMAIL_API_KEY
+        sync: false
+        generate: true
+      - key: MALWARE_SCANNER
+        sync: false
+        value: ""
+      - key: UPLOADS_DIR
+        sync: false
+        value: /tmp/uploads
+      - key: UPLOAD_MAX_BYTES
+        sync: false
+        value: "26214400"
